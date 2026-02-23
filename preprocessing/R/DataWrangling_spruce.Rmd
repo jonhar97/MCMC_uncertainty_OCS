@@ -1,0 +1,1352 @@
+---
+title: "DataSetupOCExample"
+author: "Jon Ahlinder"
+date: "2023-09-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(RColorBrewer)
+library(ggplot2)
+library(nadiv)
+library(rstan)
+require(BGLR)
+library(Matrix)
+options(mc.cores = parallel::detectCores()) # For execution on a local, multicore CPU with excess RAM
+rstan_options(auto_write = TRUE) # To avoid recompilation of unchanged Stan programs
+library(brms)
+library(corpcor) # load corpcor library to fix positive definiteness
+library(asreml)
+library(asremlPlus)
+library(stringr)
+#library(INLA)
+library(tibble)
+library(AGHmatrix)
+library(pheatmap)
+path <- "/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/"
+```
+
+## Notes
+
+NB! Use the same pedigree (and relationship matrix) in both Opsel and OSQP
+
+## Read Phenotypic data
+
+```{r}
+S22F812A2 <- read.table(file = paste(path,"DMS_stems_S22F812A2.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S22F812A2:\n'))
+print(colnames(S22F812A2)[grep('Adj_',colnames(S22F812A2))])
+S23F812A1 <- read.table(file = paste(path,"DMS_stems_S23F812A1.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F812A1:\n'))
+print(colnames(S23F812A1)[grep('Adj_',colnames(S23F812A1))])
+S23F832392 <- read.table(file = paste(path,"DMS_stems_S23F832392.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F832392:\n'))
+print(colnames(S23F832392)[grep('Adj_',colnames(S23F832392))])
+S23F832393 <- read.table(file = paste(path,"DMS_stems_S23F832393.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F832393:\n'))
+print(colnames(S23F832393)[grep('Adj_',colnames(S23F832393))])
+S23F832394 <- read.table(file = paste(path,"DMS_stems_S23F832394.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F832394:\n'))
+print(colnames(S23F832394)[grep('Adj_',colnames(S23F832394))])
+S23F832395 <- read.table(file = paste(path,"DMS_stems_S23F832395.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F832395:\n'))
+print(colnames(S23F832395)[grep('Adj_',colnames(S23F832395))])
+S23F8820476 <- read.table(file = paste(path,"DMS_stems_S23F8820476.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F8820476:\n'))
+print(colnames(S23F8820476)[grep('Adj_',colnames(S23F8820476))])
+S23F8820477 <- read.table(file = paste(path,"DMS_stems_S23F8820477.txt",sep=""),sep=",",header=T) %>%
+  mutate(Stem_id = as.integer(Stem_id))
+cat(sprintf('Traits for S23F8820477:\n'))
+print(colnames(S23F8820477)[grep('Adj_',colnames(S23F8820477))])
+# Show common traits
+# List of data frames
+df_list <- list(S22F812A2, S23F812A1, S23F832392, S23F832393, S23F832394, S23F832395, S23F8820476, S23F8820477)  # Add your data frames here
+df2 <- list(S23F8820476, S23F8820477)
+
+# Get the column names of the first data frame
+common_cols <- colnames(df_list[[1]])
+
+# Iterate through the remaining data frames
+for (i in 2:length(df_list)) {
+  common_cols <- intersect(common_cols, colnames(df_list[[i]]))
+}
+
+# 'common_cols' now contains the column names that are the same across all data frames
+print(common_cols)
+# Get the column names of the first data frame
+common_cols <- colnames(df2[[1]])
+
+# Iterate through the remaining data frames
+for (i in 2:length(df_list)) {
+  common_cols <- intersect(common_cols, colnames(df_list[[i]]))
+}
+
+# 'common_cols' now contains the column names that are the same across all data frames
+print(common_cols)
+```
+## Plots of data 476 and 477
+Traits that seems most promising: Hjd_17, Htv_17, Sprant_17, Hjd_07
+```{r}
+# Height per family
+summary_data_476 <- S23F8820476 %>%  
+  mutate(Family_id = as.factor(Family_id)) %>%
+  group_by(Family_id) %>%
+  summarise(
+    Avg_Hjd_17 = mean(Hjd_17),
+    SD_Hjd_17 = sd(Hjd_17),
+    Avg_Hjd_7 = mean(Hjd_07),
+    SD_Hjd_7 = sd(Hjd_07), 
+  ) %>%
+  filter(!is.na(Avg_Hjd_17))
+# Choose a ColorBrewer palette (e.g., "Set2")
+color_palette <- brewer.pal(nrow(summary_data_476), "Set2")  # Adjust the number as needed
+
+# Create the bar plot
+p11 <- ggplot(summary_data_476, aes(x = Family_id)) +
+  geom_bar(aes(y = Avg_Hjd_17), stat = "identity", fill = color_palette[1]) +
+  scale_fill_manual(values = color_palette) +
+  geom_errorbar(aes(ymin = Avg_Hjd_17 - SD_Hjd_17, ymax = Avg_Hjd_17 + SD_Hjd_17), width = 0.2, position = position_dodge(0.9)) +
+  labs(x = "Family_id", y = "Average Hjd_17", title = "Average and Standard Deviation of Hjd_17 by Family_id for trial F476") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)); p11  # Rotate x-axis labels for better readability
+p12 <- ggplot(summary_data_476, aes(x = Family_id)) +
+  geom_bar(aes(y = Avg_Hjd_7), stat = "identity", fill = color_palette[1]) +
+  scale_fill_manual(values = color_palette) +
+  geom_errorbar(aes(ymin = Avg_Hjd_7 - SD_Hjd_7, ymax = Avg_Hjd_7 + SD_Hjd_7), width = 0.2, position = position_dodge(0.9)) +
+  labs(x = "Family_id", y = "Average Hjd_7", title = "Average and Standard Deviation of Hjd_7 by Family_id for trial F476") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)); p12  # Rotate x-axis labels for better readability
+# Create a histogram of 'Hjd_17'
+h1 <- ggplot(S23F8820476, aes(x = Hjd_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Hjd_17", y = "Frequency", title = "Histogram of Hjd_17 for trial F476") +
+  theme_minimal(); h1
+hht <- ggplot(S23F8820476, aes(x = Htv_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Htv_17", y = "Frequency", title = "Histogram of Htv_17 for trial F476") +
+  theme_minimal(); hht
+h2 <- ggplot(S23F8820476, aes(x = Hjd_07)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Hjd_7", y = "Frequency", title = "Histogram of Hjd_7 for trial F476") +
+  theme_minimal(); h2
+h3 <- ggplot(S23F8820476, aes(x = Sgblus_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Sgblus_17", y = "Frequency", title = "Histogram of Sgblus_17 for trial F476") +
+  theme_minimal(); h3
+h4 <- ggplot(S23F8820476, aes(x = Sprant_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Sprant_17", y = "Frequency", title = "Histogram of Sprant_17 for trial F476") +
+  theme_minimal(); h4
+cat(sprintf('Checking non-zero values in Sgblus_17 for trial S23F8820476:\n'))
+# Count values in 'Sgblus' column that are greater than 0
+count_positive_values <- sum(S23F8820476$Sgblus_17 > 0,na.rm = TRUE)
+# Print the count
+print(count_positive_values)
+cat(sprintf('Checking non-zero values in Sprant_17 for trial S23F8820476:\n'))
+# Count values in 'Sgblus' column that are greater than 0
+count_positive_values <- sum(S23F8820476$Sprant_17 > 0, TRUE)
+# Print the count
+print(count_positive_values)
+
+summary_data_477 <- S23F8820477 %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  group_by(Family_id) %>%
+  summarise(
+    Avg_Hjd_17 = mean(Hjd_17),
+    SD_Hjd_17 = sd(Hjd_17),
+     Avg_Hjd_7 = mean(Hjd_07),
+    SD_Hjd_7 = sd(Hjd_07),   
+  ) %>%
+  filter(!is.na(Avg_Hjd_17))
+# Create the bar plot
+p1 <- ggplot(summary_data_477, aes(x = Family_id)) +
+  geom_bar(aes(y = Avg_Hjd_17), stat = "identity", fill = color_palette[2]) +
+  scale_fill_manual(values = color_palette) +
+  geom_errorbar(aes(ymin = Avg_Hjd_17 - SD_Hjd_17, ymax = Avg_Hjd_17 + SD_Hjd_17), width = 0.2, position = position_dodge(0.9)) +
+  labs(x = "Family_id", y = "Average Hjd_17", title = "Average and Standard Deviation of Hjd_17 by Family_id for trial F477") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)); p1  # Rotate x-axis labels for better readability
+p2 <- ggplot(summary_data_477, aes(x = Family_id)) +
+  geom_bar(aes(y = Avg_Hjd_7), stat = "identity", fill = color_palette[2]) +
+  scale_fill_manual(values = color_palette) +
+  geom_errorbar(aes(ymin = Avg_Hjd_7 - SD_Hjd_7, ymax = Avg_Hjd_7 + SD_Hjd_7), width = 0.2, position = position_dodge(0.9)) +
+  labs(x = "Family_id", y = "Average Hjd_7", title = "Average and Standard Deviation of Hjd_7 by Family_id for trial F477") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)); p2  # Rotate x-axis labels for better readability
+# Create a histogram of 'Hjd_17'
+h11 <- ggplot(S23F8820477, aes(x = Hjd_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Hjd_17", y = "Frequency", title = "Histogram of Hjd_17 for trial F477") +
+  theme_minimal(); h11
+h111 <- ggplot(S23F8820477, aes(x = Htv_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Htv_17", y = "Frequency", title = "Histogram of Htv_17 for trial F477") +
+  theme_minimal(); h111
+h12 <- ggplot(S23F8820477, aes(x = Hjd_07)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Hjd_7", y = "Frequency", title = "Histogram of Hjd_7 for trial F477") +
+  theme_minimal(); h12
+h13 <- ggplot(S23F8820477, aes(x = Sgblus_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Sgblus_17", y = "Frequency", title = "Histogram of Sgblus_17 for trial F477") +
+  theme_minimal(); h13
+h14 <- ggplot(S23F8820477, aes(x = Sprant_17)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(x = "Sprant_17", y = "Frequency", title = "Histogram of Sprant_17 for trial F477") +
+  theme_minimal(); h14
+cat(sprintf('Checking non-zero values in Sgblus for trial S23F8820477:\n'))
+# Count values in 'Sgblus' column that are greater than 0
+count_positive_values <- sum(S23F8820477$Sgblus_17 > 0, na.rm = TRUE)
+# Print the count
+print(count_positive_values)
+cat(sprintf('Checking non-zero values in Sprant_17 for trial S23F8820476:\n'))
+# Count values in 'Sprant' column that are greater than 0
+count_positive_values <- sum(S23F8820477$Sprant_17 > 0, TRUE)
+# Print the count
+print(count_positive_values)
+```
+
+## Get pedigree based relationship matrix
+ There were 8 in-run aggregates extracted from DATAPLAN
+ A total of 0 new aggregates have been generated for inclusion in the analysis because there are families where
+ 1) the male is a group and the female has a non-zero selfing percentage
+ 2) the male is an aggregate containing the female and the female has a zero selfing percentage
+ 3) the male is an aggregate not containing the female and female has a non-zero selfing percentage
+Number of lines read in            	 22756
+Number of genotypes in list        	 22756
+Number of genotypes in pedigree    	 22949
+Number of genetic groups           	    19
+Number of base genotypes           	  3202
+Number of families                 	   249
+Number of aggregates               	     8
+Maximum size of aggregates         	    51
+Number of mixes                    	     0
+Maximum size of mixes              	     0
+Number of parents                  	   193
+lastgen 1
+Generation Count Average F
+----------------------------------
+     0     3202   0.0000
+     1     19747  0.0002
+----------------------------------
+           22949
+
+Because there are aggregates and/or mixes in the pedigree a giv file has been generated.
+The pedigree file contains '0' for any dad that is an aggregate
+You will need to specify this giv file in any ASReml analysis that uses this pedigree
+
+
+To fit a GIV matrix in ASReml use the following syntax
+
+	ped.giv !SKIP 1 - specified on the line immediately prior to the data file line
+	giv(Genotype_id,1) - in the model statement for univariate analysis
+	Genotype_id 0 GIV - in the G structure definition line for multivariate analysis
+```{r}
+###### get all genotype ids and save to file
+genotype_list <- data.frame(Genotype_id = c(S22F812A2$Genotype_id,S23F812A1$Genotype_id,S23F832392$Genotype_id,S23F832393$Genotype_id,S23F832394$Genotype_id,S23F832395$Genotype_id,S23F8820476$Genotype_id,S23F8820477$Genotype_id))
+write.table(x = genotype_list,file = paste(path,"genotype_id.txt",sep=""),quote = FALSE,row.names = F)
+pedigree <- read.table(file = paste(path,"pedigree.txt",sep=""),sep=",",header=T)
+ainv <- read.table(file = paste(path,"ped.giv",sep=""),sep=",",header=T)
+
+
+genotype_list2 <- data.frame(Genotype_id = c(S23F8820476$Genotype_id,S23F8820477$Genotype_id))
+write.table(x = genotype_list2,file = paste(path,"genotype_id_subs.txt",sep=""),quote = FALSE,row.names = F)
+```
+
+
+## Only two trials 476 and 477
+There were 4 in-run aggregates extracted from DATAPLAN
+ A total of 0 new aggregates have been generated for inclusion in the analysis because there are families where
+ 1) the male is a group and the female has a non-zero selfing percentage
+ 2) the male is an aggregate containing the female and the female has a zero selfing percentage
+ 3) the male is an aggregate not containing the female and female has a non-zero selfing percentage
+Number of lines read in            	  5992
+Number of genotypes in list        	  5992
+Number of genotypes in pedigree    	  6151
+Number of genetic groups           	    13
+Number of base genotypes           	   979
+Number of families                 	   146
+Number of aggregates               	     4
+Maximum size of aggregates         	    51
+Number of mixes                    	     0
+Maximum size of mixes              	     0
+Number of parents                  	   159
+lastgen 1
+Generation Count Average F
+----------------------------------
+     0     979    0.0000
+     1     5172   0.0005
+----------------------------------
+           6151 
+
+Because there are aggregates and/or mixes in the pedigree a giv file has been generated.
+The pedigree file contains '0' for any dad that is an aggregate
+You will need to specify this giv file in any ASReml analysis that uses this pedigree
+
+
+To fit a GIV matrix in ASReml use the following syntax
+
+	ped.giv !SKIP 1 - specified on the line immediately prior to the data file line
+	giv(Genotype_id,1) - in the model statement for univariate analysis
+	Genotype_id 0 GIV - in the G structure definition line for multivariate analysis
+
+
+
+Because you have incorporated 13 genetic groups, ped.giv has '!GROUPSDF 13' on 2nd line
+
+```{r}
+pedigree2 <- read.table(file = paste(path,"pedigree (2).txt",sep=""),sep=",",header=T)
+cat(sprintf('Number of individuals in pedigree: %d\n',nrow(pedigree2)))
+# ,!GROUPSDF 13
+ainv2 <- read.table(file = paste(path,"ped (2).giv",sep=""),sep=",",header=T)
+##### merging dataset
+data_476 <- S23F8820476 %>%
+  select(c(Stem_id,Prow,Ppos,Ruta, Rad, Planta, Genotype_id,Family_id, Mum_id, Mum_type, Dad_id, Dad_type, Hjd_17, Htv_17, Sprant_17, Vit_07, Hjd_07)) %>%
+  mutate(Trial = "S23F8820476")
+data_477 <- S23F8820477 %>%
+  select(c(Stem_id,Prow,Ppos, Ruta, Rad, Planta, Genotype_id,Family_id, Mum_id, Mum_type, Dad_id, Dad_type, Hjd_17, Htv_17, Sprant_17, Vit_07, Hjd_07)) %>%
+  mutate(Trial = "S23F8820477")
+data_476_477 <- rbind(data_476,data_477)
+rm(data_476, data_477)
+# Filter and save the Genotype_id of individuals to be removed
+pedigree3 <- pedigree2 %>% # remove checklot trees
+  filter(!(Dad_id == 0) | grepl("Picea_abies", Genotype_id)) %>% #  & dam == 0
+  mutate(Genotype_id = as.factor(Genotype_id))
+
+# Filter 'data_476_477' to keep only individuals that match the retained Genotype_id values
+data_476_477_wo_check <- data_476_477 %>%
+  filter(Genotype_id %in% pedigree3$Genotype_id)
+```
+
+
+
+
+## Check proportion of genotyped individuals within trials
+
+```{r}
+count_overlap <- function(df1,df2){
+  
+  #df1 <- data.frame(Stem_id = S22F812A2$Stem_id)
+  #df2 <- data.frame(ID = id$ID)
+  matching_indices <- match(df1, df2, nomatch = 0)
+
+# Count the non-zero matches
+  intersection_count <- sum(matching_indices > 0)
+
+# 'intersection_count' now contains the count of matching elements
+  print(intersection_count)
+  #intersection_count <- df1 %>%
+  #  inner_join(df2, by = c("Stem_id" = "ID")) %>%
+  #  nrow()
+  #intersection_count <-  length(intersect(df1, df2))
+  # 'intersection_count' now contains the count of matching elements
+  print(intersection_count)
+  return(intersection_count)
+}
+
+id <-read.table(paste(path,"ID_genotyped.txt",sep=""),sep = ",",header=T) %>%
+  select(ID) %>%
+  as.data.frame() %>%
+  mutate(ID = as.integer(ID))
+  
+
+count_overlap(S23F812A1$Genotype_id,id$ID)
+count_overlap(S22F812A2$Genotype_id,id$ID)
+count_overlap(S23F832392$Genotype_id,id$ID)
+count_overlap(S23F832393$Genotype_id,id$ID)
+count_overlap(S23F832394$Genotype_id,id$ID)
+count_overlap(S23F832395$Genotype_id,id$ID)
+count_overlap(S23F8820476$Genotype_id,id$ID)
+count_overlap(S23F8820477$Genotype_id
+              ,id$ID)
+```
+
+
+
+## Read relationship matrix
+
+```{r}
+G <- read.csv(file = "Gmat_rrBLUP.csv",header = T,check.names = F,row.names = 1)
+print(dim(G))
+G <- as.matrix(G)
+G <- round(G,3) # improve numerical stability
+
+#snp.data <- read.csv("markers_imputed.csv", row.names = 1)
+
+# pheatmap(G, main = "G matrix",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+
+```
+## Checking G - A matrices
+
+```{r}
+# snp data
+snp.sol <- read.table(file = "Save/genotype_data_1218_JWAS.csv",sep=",",header = TRUE) # ,row.names = TRUE
+#Computing the numerator relationship matrix 10% of double-reduction
+Amat <- Amatrix(ped.sol, ploidy=2, w = 0.1)
+Gmat <- Gmatrix(snp.sol, ploidy=2,
+                maf=0.05, method="VanRaden")
+Gmat <- round(Gmat,3) #see appendix
+
+#Computing H matrix (Martini)
+Hmat_Martini <- Hmatrix(A=Amat, G=G, method="Martini", 
+                        missingValue=-9, maf=0.05)
+
+#Computing H matrix (Munoz)
+Hmat_Munoz <- Hmatrix(A=Amat, G=Gmat, markers = snp.sol, method="Munoz", 
+                      missingValue=-9, maf=0.05)
+```
+
+## Calculate H matrix
+H matrix is the relationship matrix using combined information from the pedigree and genomic relationship matrices. First, you need to compute the matrices separated and then use them as input to build the combined H matrix. 
+```{r}
+pedigree3 <- pedigree3 %>%
+  rename(sire = Dad_id, dam = Mum_id)
+pedigree4 <- pedigree3 %>%
+  filter(sire != 0 & dam != 0) %>%
+  mutate(
+    Sire = ifelse(grepl("\\[", sire), 0, sire),
+    Dam = ifelse(grepl("\\[", dam), 0, dam)
+  ) %>%
+  rename(ID = Genotype_id)
+ # select(c(Genotype_id,Mum_id,Dad_id)) %>%
+ # rename(dam = Mum_id, sire = Dad_id) # ID = Individual 
+
+Amat <- as.matrix(nadiv::makeA(pedigree4[,c("ID","Dam","Sire")])) # Create A mat
+print(dim(Amat))
+
+ro <- intersect(rownames(Amat), rownames(G))
+co <- intersect(colnames(Amat), colnames(G))
+A22 <- Amat[ro,co]
+G22 <- G[ro,co]
+pheatmap(A22, main = "A matrix Picea abies 1218 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+pdf(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/Figures/Amatrix_1218.pdf")
+pheatmap(A22, main = "A matrix Picea abies 1218 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+dev.off()
+png(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/Figures/Amatrix_1218.png")
+pheatmap(A22, main = "A matrix Picea abies 1218 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+dev.off()
+pheatmap1 <- pheatmap(A22, main = "A matrix Picea abies 1218 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+row_order <- pheatmap1$tree_row$order
+col_order <- pheatmap1$tree_col$order
+Gmat2 <- G22[row_order, col_order]
+pheatmap(Gmat2, main = "G matrix Picea abies 1218 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+###################### save
+pdf(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/Figures/Gmatrix_1218.pdf")
+pheatmap(Gmat2, main = "G matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+dev.off()
+png(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/Figures/Gmatrix_1218.png")
+pheatmap(Gmat2, main = "G matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+dev.off()
+################ write data to file
+# fix order and check overlap
+# save to file
+write.table(x = A22,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/Amatrix_spruce_1218_ordered.txt",sep = ",",quote = FALSE,col.names = FALSE,row.names = FALSE)
+write.table(x = ordered_matrix,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/Amatrix_spruce_1218_ordered_names.txt",sep = ",",quote = FALSE,col.names = FALSE,row.names = TRUE)
+
+
+#write.table(x = A22,file = "Save/Amat_1218.txt",sep="\t",quote = FALSE,row.names = TRUE)
+# make.positive.definite computes the nearest positive definite of a real symmetric matrix, using the algorithm of NJ Higham (1988)
+#cat(sprintf("Check G matrix for positive definiteness.....\n"))
+#print(is.positive.definite(G22))
+#print(rank.condition(G22)) # numerically ill-conditioned?
+#cat(sprintf("Make G22 positive definite.....\n"))
+#G23 <- make.positive.definite(G22) # make positive definite
+#print(is.positive.definite(G23))
+#print(rank.condition(G23)) 
+#print(G23[1:10,1:10]-G22[1:10,1:10])
+#write.table(x = G23,file = "Save/Gmat_1218.txt",sep="\t",quote = FALSE,row.names = TRUE)
+#pheatmap(A22, main = "A22 matrix",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0,filename = "Figures/heatmap_A22.png")
+#pheatmap(G22, main = "G matrix",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0,filename = "Figures/heatmap_G.png")
+#Computing H matrix (Martini)
+#G23_0 <- G23
+
+#index <- which(G23_0[,]<0) 
+#G23_0[index] <- 0
+#print(is.positive.definite(G23_0))
+Hmat <- Hmatrix(A=Amat, G=G, method="Martini", tau = 1, omega = 1)
+print(dim(Hmat))
+#Computing H matrix (Munoz)
+#Hmat_Munoz <- Hmatrix(A=Amat, G=G, 
+#                      ploidy=2, method="Munoz",markers = snp.data) # markers = snp.sol, 
+
+
+# data_476_477_wo_check
+added_ids <- setdiff(colnames(Hmat),data_476_477_wo_check$Genotype_id)
+
+# Assuming 'added_ids' contains the row and column names to be removed
+Hmat2 <- Hmat[setdiff(rownames(Hmat), added_ids), setdiff(colnames(Hmat), added_ids)]
+Amat2 <- Amat[setdiff(rownames(Amat), added_ids), setdiff(colnames(Amat), added_ids)]
+## Save these for use in OSQP and Opsel
+#write.table(x = Hmat2,file = "Save/Hmat_5525.txt",sep="\t",quote = FALSE,row.names = TRUE)
+#write.table(x = Amat2,file = "Save/Amat_5525.txt",sep="\t",quote = FALSE,row.names = TRUE)
+############# add Lev_7 and Lev_17
+data_476_477_wo_check <- data_476_477_wo_check %>%
+  mutate(Lev_17 = ifelse(!is.na(Hjd_17) & Hjd_17 > 0, 1, 0)) %>%
+  mutate(Lev_7 = ifelse(!is.na(Hjd_07) & Hjd_07 > 0, 1, 0))
+
+#############
+order_index <- match(colnames(Hmat2), data_476_477_wo_check$Genotype_id)
+# Use the index to reorder the rows of the data frame
+data_476_477_wo_check1 <- data_476_477_wo_check[order_index, ]
+print(dim(data_476_477_wo_check1))
+######### save data for analysis in Julia, JWAS package
+data_tmp <- data_476_477_wo_check1 %>%
+  select(Genotype_id,Rad,Ruta,Planta,Trial,Mum_id,Dad_id,Family_id,Hjd_17,
+         Hjd_07,Sprant_17,Htv_17,Vit_07,Lev_7,Lev_17) %>%
+  mutate(Genotype_id = paste("I",Genotype_id,sep="")) %>%
+  mutate(Mum_id = paste("I",Mum_id,sep="")) %>%
+  mutate(Dad_id = paste("I",Dad_id,sep = "")) %>%
+  mutate(Family_id = paste("I",Family_id,sep = "")) %>%
+  mutate(Trial_Family = interaction(Trial, Family_id, sep = "_")) %>%
+  mutate(Trial_Ruta = interaction(Trial, Ruta, sep = "_"))
+write.table(x = data_tmp,file = "Save/phenotypes_5525_spruce_Horder_v2.txt",sep=",",row.names = FALSE,quote = FALSE)
+Hmat_tmp <- Hmat2
+colnames(Hmat_tmp) <- rownames(Hmat_tmp) <- paste("I",colnames(Hmat2),sep = "")
+# make.positive.definite computes the nearest positive definite of a real symmetric matrix, using the algorithm of NJ Higham (1988)
+Hmat_tmp <- make.positive.definite(Hmat_tmp) # make positive definite
+write.table(x = round(Hmat_tmp,digits = 3),file = "Save/Hmat_5525_spruce.txt",row.names = TRUE,quote = FALSE,sep=",")
+# Round the matrix to three decimal places
+Hmat_tmp_rounded <- round(Hmat_tmp, digits = 3)
+
+# Convert the matrix to a data frame (optional, but recommended for better formatting)
+Hmat_tmp_df <- as.data.frame(Hmat_tmp_rounded)
+
+# Write the data frame to a CSV file
+write.csv(Hmat_tmp_df, file = "Save/Hmat_5525_spruce.csv", row.names = TRUE, quote = FALSE)
+write.table(Hmat_tmp_df, file = "Save/Hmat_5525_spruce_v2.txt", sep = ",", row.names = TRUE, col.names = FALSE, quote = FALSE)
+write(x = Hmat_tmp_rounded,file = "Save/Hmat_5525_spruce_v3.txt",ncolumns = ncol(Hmat_tmp_rounded),sep = ",")
+require(MASS)
+write.matrix(x = Hmat_tmp,file = "Save/Hmat_5525_spruce_v2.txt",sep = ",",)
+rm(Hmat_tmp)
+print(dim(Hmat2))
+print(head(data_476_477_wo_check1$Genotype_id,n = 30))
+print(head(rownames(Hmat2),n = 30))
+print(head(colnames(Hmat2),n = 30))
+########### write pedigree to JWAS package
+write.table(x = data.frame(ID = data_tmp$Genotype_id, sire = data_tmp$Dad_id, dam = data_tmp$Mum_id),file = "Save/pedigree_H_5525.txt",quote = FALSE,sep=",",row.names = FALSE)
+
+
+
+order_index <- match(colnames(Amat2), data_476_477_wo_check$Genotype_id)
+# Use the index to reorder the rows of the data frame
+data_476_477_wo_check2 <- data_476_477_wo_check[order_index, ]
+print(dim(data_476_477_wo_check2))
+print(dim(Amat2))
+print(head(data_476_477_wo_check2$Genotype_id,n = 30))
+print(head(rownames(Amat2),n = 30))
+print(head(colnames(Amat2),n = 30))
+######### save data for analysis in Julia, JWAS package
+data_tmp <- data_476_477_wo_check2 %>%
+  select(Genotype_id,Rad,Ruta,Planta,Trial,Mum_id,Dad_id,Family_id,Hjd_17,Hjd_07,Sprant_17,Htv_17,Vit_07,Lev_7,Lev_17)  %>%
+  mutate(Genotype_id = paste("I",Genotype_id,sep="")) %>%
+  mutate(Mum_id = paste("I",Mum_id,sep="")) %>%
+  mutate(Dad_id = paste("I",Dad_id,sep = "")) %>%
+  mutate(Family_id = as.factor(paste("I",Family_id,sep = ""))) %>%
+  mutate(Trial_Family = interaction(data_tmp$Trial, data_tmp$Family_id, sep = "_")) %>%
+  mutate(Trial_Ruta = interaction(Trial, Ruta, sep = "_"))
+
+write.table(x = data_tmp,file = "Save/phenotypes_5525_spruce_Aorder.txt",sep=",",row.names = FALSE,quote = FALSE)
+Amat_tmp <- Amat2
+colnames(Amat_tmp) <- rownames(Amat_tmp) <- paste("I",colnames(Amat2),sep = "")
+write.table(x = Amat_tmp,file = "Save/Amat_5525_spruce.txt",row.names = TRUE,quote = FALSE,sep=",")
+rm(Amat_tmp)
+write.table(x = data_tmp,file = "Save/phenotypes_5525_spruce_Aorder.txt",sep=",",row.names = FALSE,quote = FALSE)
+#write.table(x = Amat2,file = "Save/Amat_5525_spruce.txt",row.names = TRUE,quote = FALSE,sep=",")
+
+# Assuming your data frame is named data_476_477_wo_check
+data_476_477_wo_check_na <- data_476_477_wo_check %>%
+  bind_rows(data.frame(Genotype_id = added_ids), .)
+
+##### H
+# Create an index based on the order of the external vector
+order_index <- match(colnames(Hmat), data_476_477_wo_check_na$Genotype_id)
+# Use the index to reorder the rows of the data frame
+data_476_477_wo_check_naH <- data_476_477_wo_check_na[order_index, ]
+print(dim(data_476_477_wo_check_naH))
+print(dim(Hmat))
+print(head(data_476_477_wo_check_naH$Genotype_id,n = 30))
+print(head(rownames(Hmat),n = 30))
+print(head(colnames(Hmat),n = 30))
+# Create an index based on the order of the external vector
+order_index <- match(colnames(Amat), data_476_477_wo_check_na$Genotype_id)
+#### A
+# Use the index to reorder the rows of the data frame
+data_476_477_wo_check_naA <- data_476_477_wo_check_na[order_index, ]
+print(dim(data_476_477_wo_check_naA))
+print(dim(Amat))
+print(head(data_476_477_wo_check_naA$Genotype_id,n = 30))
+print(head(rownames(Amat),n = 30))
+print(head(colnames(Amat),n = 30))
+
+####### order ok and missing data added to founders
+
+
+```
+
+## Save to Opsel format
+
+```{r}
+# Save data for Opsel analysis
+# column names: Indiv.,Female,Male,EBV,Max
+# First read in results from JWAS analysis to get EBV
+EBV_Hjd_17 <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/results_JWAS_5525_A/EBV_Hjd_17.txt",sep=",",header = TRUE)
+EBV_Htv_17 <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/results_JWAS_5525_A/EBV_Htv_17.txt",sep=",",header = TRUE)
+EBV_Sprant_17 <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/results_JWAS_5525_A/EBV_Sprant_17.txt",sep=",",header = TRUE)
+EBV_Vit_7 <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/results_JWAS_5525_A/EBV_Vit_07.txt",sep=",",header = TRUE)
+EBV_Hjd_7 <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/results_JWAS_5525_A/EBV_Hjd_07.txt",sep=",",header = TRUE)
+# Index 0.6 growth, 0.2 Quality, 0.2 Vitality
+EBV_Index <- EBV_Hjd_17 %>%
+  mutate(EBV = (0.25*scale(EBV_Hjd_17$EBV)[,1] + 0.25*scale(EBV_Htv_17$EBV)[,1] + 0.1*scale(EBV_Hjd_7$EBV)[,1] + 0.2*scale(EBV_Sprant_17$EBV)[,1] + 0.2*scale(EBV_Vit_7$EBV)[,1])) %>%
+  select(-c(PEV))
+# Add parents to pedigree
+# find unique numbers 
+parents <- unique(c(data_tmp$Dad_id,data_tmp$Mum_id))
+f0 <- data.frame(Indiv. = parents, Female = 0,Male = 0,EBV = rep(0,length(parents)),Max = rep(0,length(parents)))
+f1 <- data.frame(Indiv. = data_tmp$Genotype_id,Female = data_tmp$Mum_id,Male = data_tmp$Dad_id,EBV = EBV_Index$EBV,Max = rep(5,5525))
+df <- rbind(f0,f1)
+# Indiv.,Female,Male,EBV,Max
+write.table(x = df,file = "Save/Input_opsel_5525_selindex.txt",quote= FALSE, sep=",",row.names = FALSE)
+```
+
+
+## Calculate G inverse
+
+```{r}
+dim<-dim(X)
+allfreq<-colSums(X)/(dim[1]*2)
+#Only if not already pruned for MAF
+#freqdel1<-which(allfreq<0.01)
+#freqdel2<-which(allfreq>0.99)
+#X<-X[,-c(freqdel1,freqdel2)]
+#allfreq<-allfreq[-c(freqdel1,freqdel2)]
+m<-length(allfreq)
+
+#Calculate G matrix and its inverse
+M<-X-1
+Z<-sweep(M,2,2*(allfreq-0.5),"-")
+G<-(Z%*%t(Z))/(2*sum(allfreq*(1-allfreq)))
+library(corpcor)
+library(INLA)
+G<-make.positive.definite(G)
+Ginv<-as(as(as(solve(G), "dMatrix"), "generalMatrix"), "TsparseMatrix")
+Ginv[ abs(Ginv) < sqrt(.Machine$double.eps) * max(Ginv) ] = 0
+
+#Free memory
+rm(dat)
+rm(M)
+rm(Z)
+rm(G)
+
+```
+
+## Stan via brms
+We use bmrs which runs Bayesian Multilevel Models using Stan. NB we need to carefully select an adequate prior for the analysis to improve inference. 
+```{r}
+
+#### Define predictor set
+# Traits: Hjd_17, Htv_17, Sprant_17, Hjd_07, Vit_07
+# 
+bf_Hjd17 <- bf(Hjd_17 ~ 1 + Trial + (1 | a | gr(Genotype_id, cov = Hmat)) + (1 | b | Trial:Family_id) + (1 | c | Trial:Ruta)) # + (1 | d | Ruta*Rad) + (1 | d | Ruta*Planta) + (1 | e | Trial*Family_id)
+bf_vit7 <- bf(Vit_07 ~ 1 + Trial + (1 | a | gr(Genotype_id, cov = Hmat)) + (1 | b | Trial:Family_id)  + (1 | c | Trial:Ruta))
+bf_hjd7 <- bf(Hjd_07 ~ 1 + Trial + (1 | a | gr(Genotype_id, cov = Hmat)) + (1 | b | Trial:Family_id)  + (1 | c | Trial:Ruta))
+bf_Sprant17 <- bf(Sprant_17 ~ 1 + Trial + (1 | a | gr(Genotype_id, cov = Hmat)) + (1 | b | Trial:Family_id)  + (1 | c | Trial:Ruta))
+bf_Htv_17 <- bf(Htv_17 ~ 1 + Trial + (1 | a | gr(Genotype_id, cov = Hmat)) + (1 | b | Trial:Family_id)  + (1 | c | Trial:Ruta))
+brms_m1.1 <- brm(
+  bf_Hjd17, # bf_hjd7 + bf_Htv_17 + #  + bf_vit7 + bf_Sprant17 + set_rescor(TRUE)
+  data = data_476_477_wo_check1,
+  data2 = list(Hmat = Hmat2),
+  family = gaussian(link = "identity"), # c("gaussian", "gaussian", "poisson"), #gaussian(), gaussian(link = "identity"), categorical(link = "logit", refcat = NULL)
+  chains = 4,  # 6
+  cores = 4,  # 6
+  iter = 700, # 1000
+  warmup = 200, # 500
+  thin = 1
+)
+
+save(brms_m1.1, file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/NorwaySpruceData/Save/brms_m1_NorwaySpruce_hjd17_Hmat.rda")
+brms_m1.1 <-load("Save/brms_m1_NorwaySpruce_hjd17_Hmat.rda")
+plot(brms_m1.1)
+summary(brms_m1.1)
+mcmc_plot(brms_m1.1, type = "acf")
+###################### heritability ###############################
+v_Individual <- (VarCorr(brms_m1.1, summary = FALSE)$Genotype_id$sd)^2
+v_Family <- (VarCorr(brms_m1.1, summary = FALSE)$'Trial:Family_id'$sd)^2 # NB Check
+v_Ruta <- (VarCorr(brms_m1.1, summary = FALSE)$'Trial:Ruta'$sd)^2
+v_r <- (VarCorr(brms_m1.1, summary = FALSE)$residual$sd)^2
+
+h.HT17 <- as.mcmc(v_Individual[, 1] / (v_Individual[, 1] + v_Family[,1] + v_Ruta[,1] + v_r[, 1])) # NB add family variance in denominator
+#h.HT2.2 <- as.mcmc(v_Individual[, 2] / (v_Individual[, 2] + v_r[, 2])) # NB check index
+#h.HT3.2 <- as.mcmc(v_Individual[, 3] / (v_Individual[, 3] + v_r[, 3])) # NB check index
+
+summary(h.HT17)
+#summary(h.HT2.2)
+#summary(h.HT3.2)
+plot(h.HT17)
+#plot(h.HT2.2)
+#plot(h.HT3.2)
+#Var.table <- as_draws_df(brms_m1.1)
+#Var.table$h.bwt.1 <- as.mcmc((Var.table$sd_Individual__Intercept)^2 / ((Var.table$sd_Individual__Intercept)^2 + (Var.table$sigma)^2))
+#summary(Var.table$h.bwt.1)
+#plot(Var.table$h.bwt.1)
+
+############################## Correlations ###########################
+#cor_g_12 <- as.mcmc((VarCorr(brms_m1.1, summary = FALSE)$Genotype_id$cor[, 1, 2]))
+#cor_g_13 <- as.mcmc((VarCorr(brms_m1.1, summary = FALSE)$Genotype_id$cor[, 1, 3]))
+#cor_res <- as.mcmc((VarCorr(brms_m1.1, summary = FALSE)$residual$cor[, 1, 2]))
+#cor_family <- as.mcmc((VarCorr(brms_m1.1, summary = FALSE)$Family$cor[, 1, 2]))
+#summary(cor_g_12)
+#summary(cor_g_13)
+#summary(cor_res)
+#summary(cor_family)
+
+
+# Summary of the model
+summary(brms_m1.1)
+
+# Plot the model
+plot(brms_m1.1)
+```
+
+## BGLR
+The BGLR (‘Bayesian Generalized Linear Regression’) function fits various types of parametric and semi-parametric Bayesian regressions to continuos (censored or not), binary and ordinal outcomes.
+```{r}
+# Both A and H matrices
+#niter = 15000
+#burnin = 5000
+
+#  BGLR(y, response_type = "gaussian", a=NULL, b=NULL,ETA = NULL, nIter = 1500,
+#       burnIn = 500, thin = 5, saveAt = "", S0 = NULL, 
+#       df0 =5, R2 = 0.5, weights = NULL,
+#       verbose = TRUE, rmExistingFiles = TRUE, groups=NULL)
+
+
+#2# Computing the distance matrix and then the krenel.
+#X<-scale(X,center=TRUE,scale=TRUE)
+#D<-(as.matrix(dist(X,method='euclidean'))^2)/p
+#h<-0.5
+#K<-exp(-h*D)
+
+##### pedigree NRM for comparison with Opsel
+y <- data_476_477_wo_check2$Hjd_17
+#Trial <- data_476_477_wo_check$Trial
+data_476_477_wo_check2 <- data_476_477_wo_check2 %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  mutate(Trial = as.factor(Trial))
+X <- model.matrix(~ Trial, data = data_476_477_wo_check2)
+Z1 <- model.matrix(~ Trial:Ruta, data_476_477_wo_check2)
+Z2 <-  model.matrix(~ Trial:Family_id, data_476_477_wo_check2)
+#3 setting up the linear predictor
+ETA<-list( 
+  list(X = X,model='FIXED',saveEffects=TRUE),
+  list(X = Z1,model="BRR",saveEffects=TRUE),
+  list(X = Z2,model="BRR",saveEffects=TRUE),
+  list(K=Amat2, model='BRR',saveEffects=TRUE) # BR
+)
+# Fitting the model
+### Runs the Gibbs sampler
+#fm1<-BLR(y=y, XL=X,XF = Z1,XR = Z2,GF=list(ID=1:nrow(Amat2),A=Amat2),
+#                           nIter=5500,burnIn=500,thin=1, saveAt = #"Save/saverun_BLR_A_Hjd17")
+fm<-BGLR(y=y,ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_A_Hjd17") # ,groups = data_476_477_wo_check$Trial
+save(fm,file='Save/fm_A_hjd17.rda')
+# Indiv.,Female,Male,EBV,Max format needed for Opsel
+res.Hjd17 <- data.frame(Id = data_476_477_wo_check2$Genotype_id,ID2 = rownames(Amat2), Dad = data_476_477_wo_check2$Dad_id, Mum = data_476_477_wo_check2$Mum_id, EBV = fm$ETA[[4]]$u, StdErr = fm$ETA[[4]]$SD.u, Max = 10)
+write.table(x = res.Hjd17,file = "Save/res_BGLR_Amat_5525_Hjd17.txt",quote = FALSE,row.names = TRUE)
+summary(fm)
+##Vulcano plot (posterior SD vs estimated effects)
+png(filename = "Figures/vulcano_plot_Amat_hjd17.png")
+plot(fm$ETA[[4]]$u~fm$ETA[[4]]$SD.u,col=2,
+ main='Vulcano Plot (continuous outcome)',
+ xlab='Estimated Effect',ylab='Est. Posterior SD')
+dev.off()
+png(filename = "Figures/EBV_hjd17_Amat.png")
+plot(fm$ETA[[4]]$u~y,col=3,
+ main='EBV vs Hjd_17 (continuous outcome)',
+ xlab='Phenotype',ylab='Estimated Effect')
+dev.off()
+# Residual variance
+print(fm$fit)
+varE<-scan(file = 'varE.dat')
+png(filename = "Figures/resid_Amat_Hjd17.png")
+plot(varE,type='o',col=2,cex=.5,ylab=expression(var[e]));
+abline(h=fm$varE,col=4,lwd=2);
+abline(v=fm$burnIn/fm$thin,col=4)
+dev.off()
+##### h2
+h2 <- fm$ETA[[4]]$varU/(fm$ETA[[4]]$varU+var(fm$ETA[[2]]$b)+var(fm$ETA[[3]]$b)+fm$varE)
+cat(sprintf('h2 = %f\n',h2))
+# Total prediction
+yHat<-fm$yHat
+tmp<-range(c(y,yHat),na.rm = TRUE)
+png(filename = "Figures/Predicted_vs_y_Hmat_hjd17.png")
+plot(yHat~y,xlab='Observed',ylab='Predicted',col=2,
+xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2)
+dev.off()
+
+#2# Ordinal outcome
+#yOrd<-ifelse(y<quantile(y,1/4),1,ifelse(y<quantile(y,3/4),2,3))
+#yOrdNA<-yOrd ; yOrdNA[tst]<-NA
+yOrd <- data_476_477_wo_check2$Sprant_17
+##### check distribution of Sprant_17
+data_476_477_wo_check2 %>% 
+  count(Sprant_17)
+fmOrd<-BGLR(y=yOrd,response_type='ordinal',ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_A_Sprant17")
+save(fmOrd,file='Save/fm_A_sprant17.rda')
+head(fmOrd$probs)
+summary(fmOrd)
+##Vulcano plot (posterior SD vs estimated effects)
+png(filename = "Figures/vulcano_plot_Amat_Sprant17.png")
+plot(fmOrd$ETA[[4]]$u~fmOrd$ETA[[4]]$SD.u,col=2,
+ main='Vulcano Plot (continuous outcome)',
+ xlab='Estimated Effect',ylab='Est. Posterior SD')
+dev.off()
+png(filename = "Figures/EBV_sprant17_Amat.png")
+plot(fmOrd$ETA[[4]]$u~y,col=3,
+ main='EBV vs Sprant_17 (ordinal outcome)',
+ xlab='Phenotype',ylab='Estimated Effect')
+dev.off()
+# Residual variance
+print(fmOrd$fit)
+varE<-scan(file = 'varE.dat')
+png(filename = "Figures/resid_Amat_Sprant17.png")
+plot(varE,type='o',col=2,cex=.5,ylab=expression(var[e]));
+abline(h=fmOrd$varE,col=4,lwd=2);
+abline(v=fmOrd$burnIn/fm$thin,col=4)
+dev.off()
+##### h2
+h2 <- fmOrd$ETA[[4]]$varU/(fmOrd$ETA[[4]]$varU+var(fmOrd$ETA[[2]]$b)+var(fmOrd$ETA[[3]]$b)+fmOrd$varE)
+cat(sprintf('h2 = %f\n',h2))
+# Total prediction
+yHat<-fmOrd$yHat
+tmp<-range(c(yOrd,yHat),na.rm = TRUE)
+png(filename = "Figures/Predicted_vs_y_Amat_sprant17.png")
+plot(yHat~yOrd,xlab='Observed',ylab='Predicted',col=2,
+xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2)
+dev.off()
+## Lev_17
+# step one, create Lev_17
+data_476_477_wo_check2 <- data_476_477_wo_check2 %>%
+  mutate(Lev_17 = if_else(Hjd_17 > 0, 1, 0)) %>%
+  mutate(Lev_17 = ifelse(is.na(Lev_17), 0, Lev_17))
+##### check distribution of Lev_17
+data_476_477_wo_check2 %>% 
+  count(Lev_17)
+yBin <- data_476_477_wo_check$Lev_17
+fmBin<-BGLR(y=yBin,response_type='ordinal',ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_A_Lev17")
+save(fmBin,file='Save/fm_A_lev17.rda')
+head(fmBin$probs)
+
+# Create selection index based on 60% production, 20% vitality and 20% quality
+
+
+
+####### H matrix model
+y <- data_476_477_wo_check1$Hjd_17
+#Trial <- data_476_477_wo_check$Trial
+data_476_477_wo_check1 <- data_476_477_wo_check1 %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  mutate(Trial = as.factor(Trial))
+X <- model.matrix(~ Trial, data = data_476_477_wo_check1)
+Z1 <- model.matrix(~ Trial:Ruta, data_476_477_wo_check1)
+Z2 <- model.matrix(~ Trial:Family_id, data_476_477_wo_check1)
+#3 setting up the linear predictor
+ETA<-list( 
+  list(X = X,model='FIXED',saveEffects=TRUE),
+  list(X = Z1,model='BRR',saveEffects=TRUE),
+  list(X = Z2,model='BRR',saveEffects=TRUE),
+  list(K=Hmat2, model='BRR',saveEffects=TRUE)
+)
+#3# Fitting the model
+fm22<-BLR(y=y, XL=X,XF = Z1,XR = Z2,GF=list(ID=1:nrow(Hmat2),A=Hmat2),
+                           nIter=5500,burnIn=500,thin=1, saveAt = "Save/saverun_BLR_G_Hjd17")
+save(fm22,file='Save/fm_BLR_H_hjd17.rda')
+fm2<-BGLR(y=y,ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_H_Lev17") # ,groups = data_476_477_wo_check$Trial
+save(fm2,file='Save/fm_H_hjd17.rda')
+load(file = 'Save/fm_H_hjd17.rda')
+#U=readBinMat('ETA_1_b.bin')
+summary(fm2)
+# Indiv.,Female,Male,EBV,Max format needed for Opsel
+res.Hjd17 <- data.frame(Id = data_476_477_wo_check1$Genotype_id,ID2 = rownames(Hmat2), Dad = data_476_477_wo_check1$Dad_id, Mum = data_476_477_wo_check1$Mum_id, EBV = fm2$ETA[[4]]$u, StdErr = fm2$ETA[[4]]$SD.u, Max = 10)
+write.table(x = res.Hjd17,file = "Save/res_BGLR_Hmat_5525_Hjd17.txt",quote = FALSE,row.names = TRUE)
+##Vulcano plot (posterior SD vs estimated effects)
+png(filename = "Figures/vulcano_plot_Hmat_hjd17.png")
+plot(fm$ETA[[3]]$u~fm$ETA[[3]]$SD.u,col=2,
+ main='Vulcano Plot (continuous outcome)',
+ xlab='Estimated Effect',ylab='Est. Posterior SD')
+dev.off()
+png(filename = "Figures/EBV_hjd17_Hmat.png")
+plot(fm$ETA[[3]]$u~y,col=3,
+ main='EBV vs Hjd_17 (continuous outcome)',
+ xlab='Phenotype',ylab='Estimated Effect')
+dev.off()
+# Residual variance
+print(fm$fit)
+varE<-scan(file = 'varE.dat')
+png(filename = "Figures/resid_Hmat_Hjd17.png")
+plot(varE,type='o',col=2,cex=.5,ylab=expression(var[e]));
+abline(h=fm$varE,col=4,lwd=2);
+abline(v=fm$burnIn/fm$thin,col=4)
+dev.off()
+##### h2
+h2 <- fm2$ETA[[4]]$varU/(fm2$ETA[[4]]$varU+var(fm2$ETA[[2]]$b)+var(fm2$ETA[[3]]$b)+fm2$varE)
+cat(sprintf('h2 = %f\n',h2))
+# Total prediction
+yHat<-fm2$yHat
+tmp<-range(c(y,yHat),na.rm = TRUE)
+png(filename = "Figures/Predicted_vs_y_Hmat_hjd17.png")
+plot(yHat~y,xlab='Observed',ylab='Predicted',col=2,
+xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2)
+dev.off()
+
+#2# Ordinal outcome
+#yOrd<-ifelse(y<quantile(y,1/4),1,ifelse(y<quantile(y,3/4),2,3))
+#yOrdNA<-yOrd ; yOrdNA[tst]<-NA
+yOrd <- data_476_477_wo_check1$Sprant_17
+fmOrd2<-BGLR(y=yOrd,response_type='ordinal',ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_H_Sprant17") # ,groups = data_476_477_wo_check$Trial
+save(fmOrd2,file='Save/fm_H_sprant17.rda')
+head(fmOrd2$probs)
+##### h2
+h2 <- fmOrd2$ETA[[4]]$varU/(fmOrd2$ETA[[4]]$varU+var(fmOrd2$ETA[[2]]$b)+var(fmOrd2$ETA[[3]]$b)+fmOrd2$varE)
+cat(sprintf('h2 = %f\n',h2))
+## Lev_17
+# step one, create Lev_17
+data_476_477_wo_check1 <- data_476_477_wo_check1 %>%
+  mutate(Lev_17 = if_else(Hjd_17 > 0, 1, 0)) %>%
+  mutate(Lev_17 = ifelse(is.na(Lev_17), 0, Lev_17))
+##### check distribution of Lev_17
+data_476_477_wo_check1 %>% 
+  count(Lev_17)
+yBin <- data_476_477_wo_check1$Lev_17
+fmBin2<-BGLR(y=yBin,response_type='ordinal',ETA=ETA, nIter=12000, burnIn=2000, saveAt = "Save/saverun_BGLR_H_Lev17")
+save(fmBin2,file='Save/fm_H_lev17.rda')
+head(fmBin2$probs)
+##### h2
+h2 <- fmBin2$ETA[[4]]$varU/(fmBin2$ETA[[4]]$varU+var(fmBin2$ETA[[2]]$b)+var(fmBin2$ETA[[3]]$b)+fmBin2$varE)
+cat(sprintf('h2 = %f\n',h2))
+```
+
+## BLR
+
+```{r}
+##### pedigree NRM for comparison with Opsel
+y <- data_476_477_wo_check2$Hjd_17
+#Trial <- data_476_477_wo_check$Trial
+data_476_477_wo_check2 <- data_476_477_wo_check2 %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  mutate(Trial = as.factor(Trial))
+X <- model.matrix(~ Trial, data = data_476_477_wo_check2)
+Z1 <- model.matrix(~ Trial:Ruta, data_476_477_wo_check2)
+Z2 <-  model.matrix(~ Trial:Family_id, data_476_477_wo_check2)
+
+# Fitting the model
+### Runs the Gibbs sampler
+fm1<-BLR(y=y, XL=X,XF = Z1,XR = Z2,GF=list(ID=1:nrow(Amat2),A=Amat2),
+                           nIter=5500,burnIn=500,thin=1, saveAt = "Save/saverun_BLR_A_Hjd17")
+save(fm1,file='Save/fm_BLR_A_hjd17.rda')
+####### H matrix model
+y <- data_476_477_wo_check1$Hjd_17
+#Trial <- data_476_477_wo_check$Trial
+data_476_477_wo_check1 <- data_476_477_wo_check1 %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  mutate(Trial = as.factor(Trial))
+X <- model.matrix(~ Trial, data = data_476_477_wo_check1)
+Z1 <- model.matrix(~ Trial:Ruta, data_476_477_wo_check1)
+Z2 <- model.matrix(~ Trial:Family_id, data_476_477_wo_check1)
+
+#3# Fitting the model
+fm22<-BLR(y=y, XL=X,XF = Z1,XR = Z2,GF=list(ID=1:nrow(Hmat2),A=Hmat2),
+                           nIter=12000,burnIn=2000,thin=2, saveAt = "Save/saverun_BLR_G_Hjd17")
+save(fm22,file='Save/fm_BLR_H_hjd17.rda')
+
+```
+
+## Additional plots of BGLR analyses
+
+```{r}
+############ h2 ##########
+# Open the binary file in read mode
+con <- file("Save/saverun_BGLR_A_Hjd17ETA_2_b.bin", "rb")
+
+# Read the binary data
+#data1 <- readBin(con, numeric())
+#data2 <- readBin(con, numeric())
+# Initialize the data vector
+data1 <- integer()
+
+# Read the binary data in chunks
+while (length(chunk <- readBin(con, what = "integer")) > 0) {
+  data1 <- c(data1, chunk)
+}
+
+# Close the file connection
+close(con)
+
+
+```
+
+## Inference using INLA
+Including nested random effects family within trial and plot within trial. The function model.matrix() can be used with a formula that includes the nesting of the variable to create the matrices of the random effects
+```{r}
+inla.setOption("num.threads", 7)
+# Calculate A and H inverse
+# Compute the Cholesky decomposition
+L <- chol(Amat2)
+# Invert the matrix using the Cholesky decomposition
+A_inv <- solve(t(L) %*% L)
+
+L <- chol(Hmat2)
+H_inv <- solve(t(L) %*% L)
+
+
+write.table(x = data_476_477_wo_check1,)
+data_476_477_wo_check1 <- data_476_477_wo_check1 %>% 
+  mutate(ID = seq(1:nrow(data_476_477_wo_check1)))
+data_476_477_wo_check2 <- data_476_477_wo_check2 %>% 
+  mutate(ID = seq(1:nrow(data_476_477_wo_check2)))
+
+# get the indices and values of the non-zero elements
+ind_nnz <- which(A_inv != 0, arr.ind = TRUE)
+i <- ind_nnz[, 1]
+j <- ind_nnz[, 2]
+x <- A_inv[ind_nnz]
+# create the sparse matrix
+A_inv_sp <- sparseMatrix(i = i, j = j, x = x, dims = dim(A_inv))
+ind_nnz <- which(H_inv != 0, arr.ind = TRUE)
+i <- ind_nnz[, 1]
+j <- ind_nnz[, 2]
+x <- H_inv[ind_nnz]
+# create the sparse matrix
+H_inv_sp <- sparseMatrix(i = i, j = j, x = x, dims = dim(H_inv))
+
+data_476_477_wo_check1 <- data_476_477_wo_check1 %>%
+  mutate(Trial = as.factor(Trial)) %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Genotype_id = as.factor(Genotype_id)) # %>%
+data_476_477_wo_check2 <- data_476_477_wo_check2 %>%
+  mutate(Trial = as.factor(Trial)) %>%
+  mutate(Ruta = as.factor(Ruta)) %>%
+  mutate(Genotype_id = as.factor(Genotype_id))
+
+# Create nested random effects
+# Incidence matrices
+#Zi <- as(model.matrix( ~ 0 + Trial, data = data_476_477_wo_check2), "Matrix")
+Zij <- as(model.matrix( ~ 0 + Trial:Ruta, data = data_476_477_wo_check2), "Matrix")
+#Zijl <- as(model.matrix( ~ 0 + Trial:Ruta:Rad, data = data_upd), "Matrix")
+#Zijm <- as(model.matrix( ~ 0 + Trial:Ruta:Planta, data = data_upd), "Matrix")
+Zik <- as(model.matrix( ~ 0 + Trial:Family_id, data = data_476_477_wo_check2), "Matrix") # G x E effect
+# Before model fitting, indices for the nested random effects must be created
+data_476_477_upd <- data_476_477_wo_check2 %>%
+  mutate(IDij = seq(1:nrow(data_476_477_wo_check2))) %>%
+  mutate(IDik = seq(1:nrow(data_476_477_wo_check2)))
+
+############## Hjd_17
+# Fit the model with interaction terms
+model = Hjd_17 ~ 1 + Trial + f(ID, model = "generic2", Cmatrix = A_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + # , hyper = prec.prior
+        f(IDik, model = "z", Z = Zik)
+#Fit INLA
+
+# model = Hjd_17 ~ 1 + Trial + f(ID, model="generic0", Cmatrix=Ainv.sparse) # Ainv_sp
+#lm1 <- lm(Hjd_17 ~ 1 + Trial + Trial:Ruta + Trial:Family_id,data = data_upd)
+#summary(lm1)
+
+#Y_adj <- resid(lm1)
+#data_upd
+#IDsave <- names(Y_adj)
+#data_upd2 <- data.frame(data_upd[IDsave,],Y_adj)
+#ainv.upd2 <- ainverse(data_upd2[,c("Genotype_id","sire","dam")])
+#Ainv_sp2 <- sparseMatrix(i = ainv.upd2[,1], j = ainv.upd2[,2], x = ainv.upd2[,3], dims = c(max(ainv.upd2[,1]), max(ainv.upd2[,1])))
+#colnames(Ainv_sp2) <- rownames(Ainv_sp2) <- seq(1,nrow(Ainv_sp2))
+#Ainv.sparse2 = as(Ainv_sp2, "TsparseMatrix")
+#model = Y_adj ~ 1 + f(ID, model = "generic0", Cmatrix = Ainv.sparse2) 
+
+#data_tmp <- data.frame(ID = seq(1,nrow(data_upd2)),Y_adj) #
+
+#rownames(data_tmp) <- seq(1,nrow(data_upd2))
+
+fit_hjd17 = inla(model, data=data_476_477_upd, verbose=TRUE,
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T)) # , 
+           control.predictor = list(compute = TRUE)
+data_476_477_updH <- data_476_477_wo_check1 %>%
+  mutate(IDij = seq(1:nrow(data_476_477_wo_check1))) %>%
+  mutate(IDik = seq(1:nrow(data_476_477_wo_check1)))
+#### H
+model = Hjd_17 ~ 1 + Trial + f(ID, model = "generic2", Cmatrix = H_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+fit_hjd17_H = inla(model, data=data_476_477_updH, verbose=TRUE,
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T)) # , 
+           control.predictor = list(compute = TRUE)
+################# hjd_7
+
+model = Hjd_07 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=A_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+#+ f(Ruta, by = Trial, model = "iid") + f(Family_id, by = Trial, model = "iid")
+fit_hjd7 = inla(model, data=data_476_477_upd, verbose=TRUE,
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+#### H
+model = Hjd_07 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=H_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+
+fit_hjd7_H = inla(model, data=data_476_477_updH, verbose=TRUE,
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+
+############### Sprant17
+model = Sprant_17 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=A_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+fit_sprant17 = inla(model, data=data_476_477_upd, verbose=TRUE,family = "poisson",
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+#### H
+model = Sprant_17 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=H_inv_sp) + 
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+fit_sprant17_H = inla(model, data=data_476_477_updH, verbose=TRUE,family = "poisson",
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+################ Lev_17
+model = Lev_17 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=A_inv_sp) +
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+
+fit_vit17 = inla(model, data=data_476_477_upd, verbose=TRUE,family = "binomial",
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+### H
+model = Lev_17 ~ 1 + Trial + f(Genotype_id, model="generic2", Cmatrix=H_inv_sp) +
+        f(IDij, model = "z", Z = Zij) + 
+        f(IDik, model = "z", Z = Zik)
+
+fit_vit17_H = inla(model, data=data_476_477_updH, verbose=TRUE,family = "binomial",
+           control.compute=list(config=T,dic=T,mlik=T,cpo=T))
+
+
+sf <- summary(fit_hjd17); sf
+plot(fit_hjd17)
+plot(data_upd$Hjd_17, fit_hjd17$summary.fitted.values$mean, main="Fitting result")
+plot(fit_hjd17$residuals$deviance.residuals,data_476_477_upd$Hjd_17,xlab = "Residuals",ylab = "Hjd_17")
+
+#Heritability
+h2 <- (1/sf[[4]][2,1])/((1/sf[[4]][2,1])+(1/sf[[4]][1,1]) + (1/sf[[4]][4,1]) + (1/sf[[4]][5,1])); h2 # (1/sf[[4]][3,1]) + 
+
+
+#MSEtest <- sum((fit_hjd17$summary.fitted.values$mean[c(split+1):n] - ytest)^2)/length(ytest)
+#print(MSEtest)
+#print(cor.test(fit_hjd17$summary.fitted.values$mean[c(split+1):n],ytest, method = 'kendall'))
+#print(cor(fit_hjd17$summary.fitted.values$mean[c(split+1):n],ytest))
+
+#Sample from posterior, if we want to calculate 95% CI of MSE and her
+fit.samples = inla.posterior.sample(100, fit_hjd17)
+hist(fit.samples)
+```
+
+# ASREML
+## Preparation
+
+```{r}
+# Generate a complete set of combinations for Prow and Ppos
+complete_combinations <- expand.grid(Prow = 1:30, Ppos = 1:90)
+
+# Find the missing combinations
+missing_combinations <- anti_join(complete_combinations, S23F8820476, by = c("Prow", "Ppos"))
+
+# View the missing combinations
+head(missing_combinations)
+```
+
+## Inference
+
+```{r}
+# Univariate runs to get starting values
+# Get Ainverse on sparse form
+ainv.476_477 <- ainverse(pedigree3[,1:3])
+data_476_477_wo_check <- data_476_477_wo_check %>%
+  #mutate(Genotype_id = as.factor(Genotype_id)) %>%
+  mutate(Family_id = as.factor(Family_id)) %>%
+  mutate(Trial = as.factor(Trial)) %>%
+  mutate(Prow = as.factor(Prow)) %>%
+  mutate(Ppos = as.factor(Ppos))
+res.h17 <- asreml(
+      fixed = Hjd_17 ~ 1 + Trial,
+      random = ~ vm(Genotype_id, ainv.476_477) + 
+      idv(Trial):idv(Family_id) +
+      idv(Trial):idv(Ruta),
+    #  idv(Trial):idv(Ruta):idv(Rad) + 
+    #  idv(Trial:idv(Ruta):idv(Planta),
+      residual = ~ units, #dsum(~ar1(Ppos):ar1(Prow) | Trial),
+ # units,
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include"),
+      maxit = 1000
+    )
+summary.asreml(res.h17) 
+# calculate the heritability
+cat(sprintf('Heritability of trait Hjd_17:\n'))
+vpredict(res.h17, h2 ~ V3 / (V1 + V2 + V3 + V4))
+res.h7 <- asreml(
+      fixed = Hjd_07 ~ 1 + Trial,
+      random = ~ vm(Genotype_id, ainv.476_477) + 
+      idv(Trial):idv(Family_id) +
+      idv(Trial):idv(Ruta),
+    #  idv(Trial):idv(Ruta):idv(Rad) + 
+    #  idv(Trial:idv(Ruta):idv(Planta),
+      residual = ~ units, #dsum(~ar1(Ppos):ar1(Prow) | Trial),
+ # units,
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include"),
+      maxit = 1000
+    )
+summary.asreml(res.h7) 
+# calculate the heritability
+cat(sprintf('Heritability of trait Hjd_7:\n'))
+vpredict(res.h7, h2 ~ V3 / (V1 + V2 + V3 + V4))
+res.htv17 <- asreml(
+      fixed = Htv_17 ~ 1 + Trial,
+      random = ~ vm(Genotype_id, ainv.476_477) + 
+      idv(Trial):idv(Family_id) +
+      idv(Trial):idv(Ruta),
+    #  idv(Trial):idv(Ruta):idv(Rad) + 
+    #  idv(Trial:idv(Ruta):idv(Planta),
+      residual = ~ units, #dsum(~ar1(Ppos):ar1(Prow) | Trial),
+ # units,
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include"),
+      maxit = 1000
+    )
+summary.asreml(res.htv17) 
+# calculate the heritability
+cat(sprintf('Heritability of trait Htv_17:\n'))
+vpredict(res.htv17, h2 ~ V3 / (V1 + V2 + V3 + V4))
+res.vit7 <- asreml(
+      fixed = Vit_07 ~ 1 + Trial,
+      random = ~ vm(Genotype_id, ainv.476_477) + 
+      idv(Trial):idv(Family_id) +
+      idv(Trial):idv(Ruta),
+    #  idv(Trial):idv(Ruta):idv(Rad) + 
+    #  idv(Trial:idv(Ruta):idv(Planta),
+      residual = ~ units, #dsum(~ar1(Ppos):ar1(Prow) | Trial),
+ # units,
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include"),
+      maxit = 1000
+    )
+summary.asreml(res.vit7) 
+# calculate the heritability
+cat(sprintf('Heritability of trait Sprant_17:\n'))
+vpredict(res.vit7, h2 ~ V3 / (V1 + V2 + V3 + V4))
+res.sprant17 <- asreml(
+      fixed = Sprant_17 ~ 1 + Trial,
+      random = ~ vm(Genotype_id, ainv.476_477) + 
+      idv(Trial):idv(Family_id) +
+      idv(Trial):idv(Ruta),
+    #  idv(Trial):idv(Ruta):idv(Rad) + 
+    #  idv(Trial:idv(Ruta):idv(Planta),
+      residual = ~ units, #dsum(~ar1(Ppos):ar1(Prow) | Trial),
+ # units,
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include"),
+      maxit = 1000
+    )
+summary.asreml(res.sprant17) 
+# calculate the heritability
+cat(sprintf('Heritability of trait Sprant_17:\n'))
+vpredict(res.sprant17, h2 ~ V3 / (V1 + V2 + V3 + V4))
+###############################################################
+## Multi-trait run
+## Get and change starting values
+mult.start <- asreml(
+      fixed = cbind(Hjd_17, Htv_17, Hjd_07, Sprant_17) ~  trait
+        + trait:Trial,
+      random = ~ us(trait):vm(Genotype_id, ainv.476_477) + 
+        us(trait):idv(Trial):idv(Family_id) +
+        us(trait):idv(Trial):idv(Ruta),
+      residual = ~ id(units):us(trait),
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include", y = "include"),
+      maxit = 1000,
+      start.values = TRUE
+    )
+  print(mult.start)$vparameters.table
+  # Use grep to find rows with 'Sprant' exactly two times
+traits <- c("Hjd_17", "Htv_17", "Hjd_07", "Sprant_17")
+lt <- length(traits)
+start.v <- rbind(res.h17$vparameters,res.htv17$vparameters,res.h7$vparameters,res.sprant17$vparameters) %>%
+  as.data.frame() %>%
+  mutate(Trait = traits)
+vi <- mult.start$vparameters.table
+# Initialize an empty vector to store the indices
+combined_indices <- data.frame()
+for (i in 1:lt){
+  index <- grep(paste(traits[i],".*",traits[i],sep=""),mult.start$vparameters.table[,'Component'])
+  vi[index,"Value"] <- t(start.v[i,c(3,2,1,4)])
+  # Combine the index vector with the existing ones
+  combined_indices <- bind_rows(combined_indices, as.data.frame(index))
+}
+tot.index <- seq(1:nrow(vi))
+# Find elements in 'tot.index' that are not in 'combined_indices'
+not_in_combined_indices <- tot.index[!tot.index %in% combined_indices$index]
+# set the covariances to zero starting values 
+vi[not_in_combined_indices,'Value'] <- 0
+##### analyze 
+# column major order!
+rownames(start.v) <- start.v$Trait
+initA <- c(start.v['Hjd_17','vm(Genotype_id, ainv.476_477)'],0,0,0,start.v['Htv_17','vm(Genotype_id, ainv.476_477)'],0,0,start.v['Hjd_07','vm(Genotype_id, ainv.476_477)'],0,start.v['Sprant_17','vm(Genotype_id, ainv.476_477)'])
+initF <- c(start.v['Hjd_17','Trial:Family_id!Trial'],0,0,0,start.v['Htv_17','Trial:Family_id!Trial'],0,0,start.v['Hjd_07','Trial:Family_id!Trial'],0,start.v['Sprant_17','Trial:Family_id!Trial'])
+initRuta <- c(start.v['Hjd_17','Trial:Ruta!Trial'],0,0,0,start.v['Htv_17','Trial:Ruta!Trial'],0,0,start.v['Hjd_07','Trial:Ruta!Trial'],0,start.v['Sprant_17','Trial:Ruta!Trial'])
+initR <- c(start.v['Hjd_17','units!R'],0,0,0,start.v['Htv_17','units!R'],0,0,start.v['Hjd_07','units!R'],0,start.v['Sprant_17','units!R'])
+mult.res <- asreml(
+      fixed = cbind(Hjd_17, Htv_17, Hjd_07, Sprant_17) ~  trait # 
+        + trait:Trial,
+      random = ~ us(trait,init = initA):vm(Genotype_id, ainv.476_477) +  # ,init = initA
+        us(trait,init = initF):idv(Trial):idv(Family_id) + # ,init = initF
+        us(trait,init = initRuta):idv(Trial):idv(Ruta), # ,init = initRuta
+      residual = ~ id(units):us(trait, init = initR), # , init = initR
+      data = data_476_477_wo_check,
+      na.action = na.method(x = "include", y = "include"),
+      maxit = 1000,
+      workspace=200e06
+     # G.param = vi
+      #R.param = vi
+    )
+# ~ dsum(~id(units)|site) as alternative residual different residual VC across trials
+
+# save the data on OPSEL format
+# Indiv. Female Male EBV Max
+df <- as_tibble(res.h17$coefficients$random)
+df$TraitTMP <- rownames(res.h17$coefficients$random)
+df$SE <- sqrt(res.h17$vcoeff$random * res.h17$sigma2) 
+df <- df %>%
+  filter(grepl("Genotype_id", TraitTMP)) %>%
+  filter(!grepl("Picea_abies", TraitTMP)) %>%
+  rename(EBV = bu)  %>%
+# Extract the last part of the string using dplyr and stringr
+  mutate(Genotype_id = str_extract(TraitTMP, "(?<=_)[^_]+$")) %>%
+  select(-c(TraitTMP))
+res.asreml <- merge(df,pedigree3,by="Genotype_id") %>%
+  select(-c(SE)) %>%
+  select(c(Genotype_id,dam,sire,EBV)) %>%
+  mutate(dam = ifelse(grepl('Picea_abies', dam), '0', dam)) %>%
+  mutate(sire = ifelse(grepl('Picea_abies', sire), '0', sire)) %>%
+  rename(Male = sire, Female = dam, Indiv. = Genotype_id) %>%
+  mutate(Max = 1)
+write.table(x = res.asreml, file = "Save/EBV_asreml_h17_opsel_input.txt",quote = FALSE, sep = ",",row.names = FALSE)
+res.asreml <- read.table(file = "Save/EBV_asreml_h17_opsel_input.txt",sep = ",",header = T)
+
+```
+
+
+
+# Notes
+Ablation from Machine Learning, removal of components, stability of results

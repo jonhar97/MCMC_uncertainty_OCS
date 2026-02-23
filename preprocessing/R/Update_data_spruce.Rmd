@@ -1,0 +1,275 @@
+---
+title: "Provide data for Spruce example OC"
+author: "Jon Ahlinder"
+date: "2024-09-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(vegan)
+require(ggplot2)
+require(dplyr)
+library(corpcor) # load corpcor library to fix positive definiteness
+library(AGHmatrix)
+library(pheatmap)
+```
+
+## Read data
+
+```{r}
+Amat1218 <- read.table(file = "Save/Amat_1218.txt",check.names = FALSE) %>% as.matrix() # get order from G/A matrices
+Gmat1218 <- read.table(file = "Save/Gmat_1218.txt",check.names = FALSE) %>% as.matrix()
+data <- read.table(file = "Save/phenotypes_5525_spruce_Horder_v2.txt",sep=",",header = TRUE)
+```
+
+## check order of A and G matrices:
+
+```{r}
+# Check if column names are identical
+identical(colnames(Amat1218), colnames(Gmat1218))
+cat(sprintf('First 20 names in A:\n'))
+print(colnames(Amat1218)[1:20])
+cat(sprintf('First 20 names in G:\n'))
+print(colnames(Gmat1218)[1:20])
+
+```
+
+## select subset of data, order and save to file
+For JWAS analysis
+```{r}
+head(data)
+# Get the column names of Gmat1218
+column_names <- colnames(Gmat1218)
+
+# Filter and arrange the data frame
+filtered_data <- data %>%
+  filter(ID %in% column_names) %>%
+  arrange(match(ID, column_names))
+cat(sprintf('First 20 rows in data:\n'))
+print(filtered_data$ID[1:20])
+
+write.table(x = filtered_data,file = "Save/JWAS_phenotypes_1218.txt",sep = ",",quote = FALSE, row.names = FALSE)
+
+################ Tune G matrix
+# Function to calculate mean diagonal and off-diagonal elements
+mean_diagonal_offdiagonal <- function(mat) {
+  n <- nrow(mat)
+  diag_mean <- sum(diag(mat)) / n
+  off_diag_mean <- (sum(mat) - sum(diag(mat))) / (n * (n - 1))
+  return(list(diag_mean = diag_mean, off_diag_mean = off_diag_mean))
+}
+
+# Compute mean of diagonals and off-diagonals for G
+mean_diag_G <- mean_diagonal_offdiagonal(Gmat1218)$diag_mean
+mean_offdiag_G <- mean_diagonal_offdiagonal(Gmat1218)$off_diag_mean
+cat("G - Mean Diagonal:", mean_diag_G, ", Mean Off-Diagonal:", mean_offdiag_G, "\n")
+
+# Compute mean of diagonals and off-diagonals for A
+mean_diag_A <- mean_diagonal_offdiagonal(Amat1218)$diag_mean
+mean_offdiag_A <- mean_diagonal_offdiagonal(Amat1218)$off_diag_mean
+cat("A - Mean Diagonal:", mean_diag_A, ", Mean Off-Diagonal:", mean_offdiag_A, "\n")
+
+# Scaling factor to adjust G
+alpha <- mean_diag_A / mean_diag_G
+beta <- mean_offdiag_A - alpha * mean_offdiag_G
+
+# Adjusted G matrix
+G_adjusted <- alpha * Gmat1218 + beta
+G_adjusted2 <- alpha * Gmat1218
+
+mantel(G_adjusted,Gmat1218)
+mantel(G_adjusted2,Gmat1218)
+print(Gmat1218[1:10,1:10] - G_adjusted[1:10,1:10])
+write.table(x = G_adjusted,file = "Save/JWAS_G_1218_tuned.txt",sep = ",",quote = FALSE, row.names = TRUE)
+write.table(x = G_adjusted2,file = "Save/JWAS_G_1218_tuned2.txt",sep = ",",quote = FALSE, row.names = TRUE)
+write.table(x = Amat1218,file = "Save/JWAS_A_1218.txt",sep = ",",quote = FALSE, row.names = TRUE)
+
+############## save data on opsel format
+############## needs jwas analysis to estimate BV
+
+
+```
+
+## Filter and fix order 5525 data
+
+```{r}
+EBV_hjd17 <- read.table(file = "results_JWAS_5525_A/EBV_Hjd_17.txt",header = TRUE,sep = ",")
+EBV_htv17 <- read.table(file = "results_JWAS_5525_A/EBV_Htv_17.txt",header = TRUE,sep = ",")
+EBV_sprant17 <- read.table(file = "results_JWAS_5525_A/EBV_Sprant_17.txt",header = TRUE,sep = ",")
+A5525 <- read.table(file = "Save/Amat_5525.txt",sep = "\t",header = TRUE,check.names = FALSE)
+H5525 <- read.table(file = "Save/Hmat_5525_spruce_v2.txt",sep = ",",header = FALSE,check.names = FALSE,row.names = 1)
+colnames(H5525) <- rownames(H5525)
+
+# Step 1: Extract row names from A5525 matrix
+filter_ids <- rownames(A5525)
+
+# Step 2: Filter EBV_hjd17 to include only rows with IDs present in A5525
+EBV_hjd17_filtered <- EBV_hjd17 %>%
+  filter(ID %in% filter_ids)
+EBV_htv17_filtered <- EBV_htv17 %>%
+  filter(ID %in% filter_ids)
+EBV_sprant17_filtered <- EBV_sprant17 %>%
+  filter(ID %in% filter_ids)
+
+# Step 3: Extract row names from A5022 matrix for ordering
+row_order <- rownames(A5525)
+
+# Step 4: Convert row names to a data frame
+order_df <- data.frame(ID = as.integer(row_order))
+
+# Step 5: Join with the filtered EBV_hjd17 on the ID column
+EBV_hjd17_ordered <- order_df %>%
+  left_join(EBV_hjd17_filtered, by = "ID")
+EBV_htv17_ordered <- order_df %>%
+  left_join(EBV_htv17_filtered, by = "ID")
+EBV_sprant17_ordered <- order_df %>%
+  left_join(EBV_sprant17_filtered, by = "ID")
+# Step 6: Arrange the rows based on the order of row names
+EBV_hjd17_ordered <- EBV_hjd17_ordered %>%
+  arrange(match(ID, row_order))
+EBV_htv17_ordered <- EBV_htv17_ordered %>%
+  arrange(match(ID, row_order))
+EBV_sprant17_ordered <- EBV_sprant17_ordered %>%
+  arrange(match(ID, row_order))
+# View the ordered data frame
+print(EBV_hjd17_ordered)
+
+write.table(x = EBV_hjd17_ordered,file = "results_JWAS_5525_A/EBV_Hjd_17_ordered.txt",quote = FALSE,sep = ",", row.names = FALSE)
+write.table(x = EBV_htv17_ordered,file = "results_JWAS_5525_A/EBV_Htv_17_ordered.txt",quote = FALSE,sep = ",", row.names = FALSE)
+write.table(x = EBV_sprant17_ordered,file = "results_JWAS_5525_A/EBV_Sprant_17_ordered.txt",quote = FALSE,sep = ",", row.names = FALSE)
+```
+
+## Fix H matrix
+
+```{r}
+G22 <- read.table(file = "Save/JWAS_G_1218_tuned.txt",header = TRUE, row.names = 1,sep = ",",check.names = FALSE)
+A5525 <- read.table(file = "Save/Amat_5525.txt",sep = "\t",header = TRUE,check.names = FALSE)
+# make.positive.definite computes the nearest positive definite of a real symmetric matrix, using the algorithm of NJ Higham (1988)
+#cat(sprintf("Check G matrix for positive definiteness.....\n"))
+#print(is.positive.definite(G22))
+#print(rank.condition(G22)) # numerically ill-conditioned?
+#cat(sprintf("Make G22 positive definite.....\n"))
+#G23 <- make.positive.definite(G22) # make positive definite
+#print(is.positive.definite(G23))
+#rint(rank.condition(G23)) 
+print(G22[1:10,1:10])
+A22 <- read.table(file = "Save/JWAS_A_1218.txt",header = TRUE, row.names = 1,sep = ",",check.names = FALSE)
+print(A22[1:10,1:10])
+print(G_adjusted2[1:10,1:10])
+tau <- 0.05
+H22 <- tau * A22 + (1-tau) * G_adjusted2
+write.table(x = H22,file = "Save/Hmat_1218_spruce_005.txt",quote = FALSE,sep = ",", row.names = TRUE)
+tau <- 0.01
+H22 <- tau * A22 + (1-tau) * G_adjusted2
+write.table(x = H22,file = "Save/Hmat_1218_spruce_001.txt",quote = FALSE,sep = ",", row.names = TRUE)
+tau <- 0.001
+H22_alt <- tau * diag(nrow = nrow(G_adjusted2)) + (1-tau) * G_adjusted2 
+write.table(x = H22_alt,file = "Save/Hmat_1218_spruce_diag.txt",quote = FALSE,sep = ",", row.names = TRUE)
+###### replace A22 with H22 in A5525 matrix
+Hmat <- Hmatrix(A=as.matrix(A5525), G=G_adjusted2, method="Martini", tau = 1, omega = 1)
+write.table(x = Hmat,file = "Save/Hmat_5525_spruce_v4_tau1_omega1.txt",quote = FALSE,sep = ",", row.names = TRUE)
+Hmat <- Hmatrix(A=as.matrix(A5525), G=G_adjusted2, method="Martini", tau = 0.5, omega = 1)
+write.table(x = Hmat,file = "Save/Hmat_5525_spruce_v4_tau05_omega1.txt",quote = FALSE,sep = ",", row.names = TRUE)
+Hmat <- Hmatrix(A=as.matrix(A5525), G=G_adjusted2, method="Martini", tau = 1, omega = 0.5)
+write.table(x = Hmat,file = "Save/Hmat_5525_spruce_v4_tau1_omega05.txt",quote = FALSE,sep = ",", row.names = TRUE)
+
+#mantel(H22_alt,Hmat)
+H5525 <- A5525
+H5525[rownames(H22),colnames(H22)] <- H22
+head(H5525)
+H5525 <- H5525[order(rownames(H5525)),order(colnames(H5525))]
+head(H5525)
+cat(sprintf('Dim(Hmat): %d x %d\n',dim(H5525)[1], dim(H5525)[2]))
+###### fix data frame on the same order
+data5525 <- read.table(file = "Save/phenotypes_5525_spruce_Horder_v2.txt",header = T,sep = ",")
+row_order <- rownames(Hmat)
+
+# Step 4: Convert row names to a data frame
+order_df <- data.frame(ID = as.integer(row_order))
+
+# Step 5: Join with the filtered EBV_hjd17 on the ID column
+data5525_ordered <- order_df %>%
+  left_join(data5525, by = "ID")
+
+# Step 6: Arrange the rows based on the order of row names
+data5525_ordered <- data5525_ordered %>%
+  arrange(match(ID, row_order))
+
+# View the ordered data frame
+head(data5525_ordered)
+head(row_order)
+write.table(x = data5525_ordered,file = "Save/phenotypes_5525_spruce_Horder_v3.txt",quote = FALSE,sep = ",", row.names = FALSE)
+write.table(x = H5525,file = "Save/Hmat_5525_spruce_v3.txt",quote = FALSE,sep = ",", row.names = TRUE)
+```
+
+## Gmatrix
+
+```{r}
+# step 1: calculate alpha and beta based on G and A
+# alpha = mean(diag(A22)) - mean(diag(G))*beta (1)
+# mean(G)*beta + alpha = mean(A22) (2)
+# use (1) in (2) to calculate beta then calculate alpha
+
+# beta = (mean(A22) - (mean(diag(A22)) - mean(diag(G))*beta)) / mean(G)
+# mean(G) * beta + mean(diag(G) = mean(A22) - mean(diag(A22))
+adj_G <- function(A22,G){
+  beta <- (mean(A22) - mean(diag(A22))) / (mean(G) - mean(diag(G)))
+  alpha <- mean(diag(A22)) - mean(diag(G))*beta
+  G_adj <- beta*G + alpha
+  
+  return(G_adj)
+
+}
+
+# use Gmat1218 and Amat1218
+G_adj <- adj_G(Amat1218,Gmat1218)                              
+
+##### check average differences
+mean(G_adj)   
+mean(Amat1218)
+##### check diagonal
+mean(diag(G_adj))
+mean(diag(Amat1218))
+
+write.table(x = G_adj,file = "Save/Gmat_1218_spruce.txt",quote = FALSE,sep = ",", row.names = TRUE)
+###### fix data frame on the same order
+data5525 <- read.table(file = "Save/phenotypes_5525_spruce_Horder_v2.txt",header = T,sep = ",")
+row_order <- rownames(Hmat)
+
+# Step 4: Convert row names to a data frame
+order_df <- data.frame(ID = as.integer(row_order))
+
+# Step 5: Join with the filtered EBV_hjd17 on the ID column
+data5525_ordered <- order_df %>%
+  left_join(data5525, by = "ID")
+
+# Step 6: Arrange the rows based on the order of row names
+data5525_ordered <- data5525_ordered %>%
+  arrange(match(ID, row_order))
+
+
+
+# Blend A and G matrices with specified tau and omega
+for(tau in seq(0.5,1.2,0.1)){
+  for (omega in seq(0.5,1.2,0.1)){
+    cat(sprintf('tau = %f, omega = %f\n',tau,omega))
+    H_mat <- Hmatrix(A=as.matrix(A5525), G=G_adj, method="Martini", tau = tau, omega = omega)
+    # View the ordered data frame
+    head(data5525_ordered)
+    head(row_order)
+
+    write.table(x = H_mat,file = paste0( "Save/Hmat_5525_spruce_tau_",tau,"_omega_",omega,".txt"),quote = FALSE,sep = ",", row.names = TRUE)
+    
+    
+  }
+}
+
+
+
+
+```
+
+
+
+

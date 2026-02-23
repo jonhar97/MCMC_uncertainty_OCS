@@ -1,0 +1,84 @@
+---
+title: "Taeda_A_969"
+author: "Jon Ahlinder"
+date: "2024-08-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(dplyr)
+require(nadiv)
+require(pheatmap)
+```
+
+## A matrix
+
+```{r}
+altped <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Metafounder/Rcode/Data/lP_unlimited.txt",header=TRUE,sep=",")
+# Calculate the A matrix
+tmpped <- prepPed(altped[,1:3])
+A_matrix <- makeA(tmpped) %>%
+  as.matrix()
+
+## sort order after saved EBV files
+# A matrix
+EBVorder <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_DBH6.txt",sep=",",header = TRUE)
+EBVorder1 <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_GV6.txt",sep=",",header = TRUE)
+EBVorder11 <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_HT6.txt",sep=",",header = TRUE)
+EBVorder111 <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_WDN4.txt",sep=",",header = TRUE)
+# G matrix
+EBVorder2 <- read.table("C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_G_926/EBV_DBH6.txt",sep=",",header = TRUE)
+
+ids <- EBVorder$ID
+ids2 <- EBVorder2$ID
+# Filter and order the matrix based on the IDs
+ordered_matrix <- A_matrix[as.character(ids2), as.character(ids2)]
+rownames(EBVorder) <- EBVorder$ID
+rownames(EBVorder1) <- EBVorder1$ID
+rownames(EBVorder11) <- EBVorder11$ID
+rownames(EBVorder111) <- EBVorder111$ID
+updEBVorder <- EBVorder[as.character(ids2),]
+updEBVorder1 <- EBVorder1[as.character(ids2),]
+updEBVorder11 <- EBVorder11[as.character(ids2),]
+updEBVorder111 <- EBVorder111[as.character(ids2),]
+  
+pheatmap(ordered_matrix, main = "A matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+pdf(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/Figures/Amatrix_926.pdf")
+pheatmap(ordered_matrix, main = "A matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+dev.off()
+png(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/Figures/Amatrix_926.png")
+pheatmap(ordered_matrix, main = "A matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+dev.off()
+
+
+pheatmap(ordered_matrix, main = "A matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+pheatmap1 <- pheatmap(ordered_matrix, main = "A matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0)
+row_order <- pheatmap1$tree_row$order
+col_order <- pheatmap1$tree_col$order
+write.table(x = ordered_matrix,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/Amatrix_taeda_926_ordered.txt",sep = ",",quote = FALSE,col.names = FALSE,row.names = FALSE)
+write.table(x = ordered_matrix,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/Amatrix_taeda_926_ordered_names.txt",sep = ",",quote = FALSE,col.names = FALSE,row.names = TRUE)
+
+write.table(x = updEBVorder,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_DBH6_926.txt",sep = ",",quote = FALSE,col.names = TRUE,row.names = FALSE)
+write.table(x = updEBVorder1,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_GV6_926.txt",sep = ",",quote = FALSE,col.names = TRUE,row.names = FALSE)
+write.table(x = updEBVorder11,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_HT6_926.txt",sep = ",",quote = FALSE,col.names = TRUE,row.names = FALSE)
+write.table(x = updEBVorder111,file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/results_A_926/EBV_WDN4_926.txt",sep = ",",quote = FALSE,col.names = TRUE,row.names = FALSE)
+```
+
+## Plot G matrix
+
+```{r}
+Gmat <- read.table(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/G_926_MAF001_mis005_rrBLUP_em.txt",sep = ",",header = TRUE,check.names = FALSE)
+# Ensure same order
+# Filter and order the matrix based on the IDs
+Gmat <- Gmat[as.character(ids2), as.character(ids2)]
+Gmat2 <- Gmat[row_order, col_order]
+pheatmap(Gmat2, main = "G matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+pdf(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/Figures/Gmatrix_926.pdf")
+pheatmap(Gmat2, main = "G matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+dev.off()
+png(file = "C:/Users/joah/OneDrive - Skogforsk/Documents/Projekt/Optimum contribution selection/TaedaPineData/Figures/Gmatrix_926.png")
+pheatmap(Gmat2, main = "G matrix taeda 926 genotypes",show_rownames = FALSE, show_colnames = FALSE,treeheight_row = 0, treeheight_col = 0, cluster_rows = FALSE, cluster_cols = FALSE)
+dev.off()
+```
+
