@@ -1,0 +1,7 @@
+# Never upload the private ID-mapping key — anonymization would be reversible otherwise
+PRIVATE_DO_NOT_UPLOAD*
+
+# Large n=5,525 relationship matrices — tracked in gzip-compressed form instead
+# (raw .txt exceeds GitHub's file size limits; see data/norway_spruce/ and README)
+data/norway_spruce/Hmat_5525_spruce_anon.txt
+data/norway_spruce/JWAS_A_5525_anon.txt
