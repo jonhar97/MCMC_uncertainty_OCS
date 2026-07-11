@@ -39,13 +39,23 @@ MCMC_uncertainty_OCS/
 ├── .gitignore
 │
 ├── data/
-│   └── norway_spruce/            # Anonymized spruce data (IDs recoded, cross-dataset consistent)
-│       ├── JWAS_phenotypes_1218_anon.txt
-│       ├── JWAS_G_1218_tuned2_anon.txt      # G matrix, n=1,218
-│       ├── JWAS_A_1218_anon.txt             # A matrix, n=1,218
-│       ├── phenotypes_5525_spruce_anon.txt
-│       ├── Hmat_5525_spruce_anon.txt        # H matrix, n=5,525
-│       └── JWAS_A_5525_anon.txt             # A matrix, n=5,525
+│   ├── norway_spruce/             # Anonymized spruce data (IDs recoded, cross-dataset consistent)
+│   │   ├── JWAS_phenotypes_1218_anon.txt
+│   │   ├── JWAS_G_1218_tuned2_anon.txt      # G matrix, n=1,218
+│   │   ├── JWAS_A_1218_anon.txt             # A matrix, n=1,218
+│   │   ├── phenotypes_5525_spruce_anon.txt
+│   │   ├── Hmat_5525_spruce_anon.txt.gz     # H matrix, n=5,525 (gzip-compressed, see below)
+│   │   ├── JWAS_A_5525_anon.txt.gz          # A matrix, n=5,525 (gzip-compressed, see below)
+│   │   ├── EBV_Hjd17.txt, EBV_Hjd7.txt, EBV_Htv17.txt,
+│   │   │   EBV_Sprant17.txt, EBV_Lev17.txt  # Posterior-mean EBVs, n=1,218 subset (5 traits)
+│   │   └── MCMC_samples_EBV_*.txt           # Full posterior chains — NOT tracked in git (~115MB);
+│   │                                          # regenerate via preprocessing/julia/, see Data Availability
+│   ├── loblolly_pine/
+│   │   ├── EBV_DBH6.txt, EBV_GV6.txt, EBV_HT6.txt, EBV_WDN4.txt  # Posterior-mean EBVs (4 traits)
+│   │   └── MCMC_samples_EBV_*.txt           # Full posterior chains — NOT tracked in git (~350MB)
+│   └── qtlmas/
+│       ├── EBV_y1.txt, EBV_y2.txt           # Posterior-mean EBVs, continuous (y1) + binary (y2) traits
+│       └── MCMC_samples_EBV_*.txt           # Full posterior chains — NOT tracked in git (~620MB)
 │
 ├── preprocessing/                # Data preparation and MCMC-GBLUP fitting (run before src/)
 │   ├── R/
@@ -198,6 +208,8 @@ gunzip -k data/norway_spruce/JWAS_A_5525_anon.txt.gz
 ```
 
 (`-k` keeps the compressed copy alongside the extracted `.txt`.)
+
+Posterior-mean ("MAP") EBV files are provided for all three datasets under `data/norway_spruce/`, `data/loblolly_pine/`, and `data/qtlmas/` and are small enough to track directly. The full MCMC posterior EBV chains (`MCMC_samples_EBV_*.txt`, used to build the CVaR-OCS scenario matrices) are **not currently tracked in this repository** — combined they total roughly 1.1GB and don't compress well enough to fit GitHub's limits. Regenerate them by re-running the relevant `preprocessing/julia/` script, or check back here for an external archive link (e.g. Zenodo) if one is added in a future update.
 
 **Loblolly pine** data are derived from publicly available NCBI SRA records as described in the manuscript and are not bundled here.
 

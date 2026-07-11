@@ -5,3 +5,9 @@ PRIVATE_DO_NOT_UPLOAD*
 # (raw .txt exceeds GitHub's file size limits; see data/norway_spruce/ and README)
 data/norway_spruce/Hmat_5525_spruce_anon.txt
 data/norway_spruce/JWAS_A_5525_anon.txt
+
+# Full MCMC posterior EBV chains (~1.1GB total, don't compress well) — NOT tracked in git.
+# Hosting decision (e.g. Zenodo) still open as of 2026-07-11; regenerate via preprocessing/
+# scripts in the meantime, or see README once an external archive link is added.
+# (EBV_*.txt point-estimate/MAP files ARE tracked — those are small.)
+data/**/MCMC_samples_EBV_*.txt
